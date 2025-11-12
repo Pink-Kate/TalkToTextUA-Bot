@@ -17,9 +17,9 @@ except (ImportError, Exception):
 BOT_TOKEN = os.getenv("BOT_TOKEN") or None
 
 # Whisper model preferences (порядок спроб завантаження)
-# Оптимізовано для швидкості: спочатку менші моделі для швидкої обробки
-# "base" - найшвидша, "small" - швидка з хорошою якістю, "medium" - найкраща якість
-WHISPER_MODELS = ["base", "small", "medium"]
+# Оптимізовано для балансу швидкості та якості
+# "small" - хороша якість з прийнятною швидкістю, "base" - швидка резервна, "medium" - найкраща якість
+WHISPER_MODELS = ["small", "base", "medium"]
 
 # Logging level
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
