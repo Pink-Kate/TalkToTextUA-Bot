@@ -48,6 +48,7 @@ except AttributeError as e:
     traceback.print_exc()
     raise
 
+# Імпортуємо handlers - просто і прямо
 from handlers import (
     button_callback,
     clear_command,
