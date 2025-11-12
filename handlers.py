@@ -1,6 +1,7 @@
 """Основні обробники команд та повідомлень."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -195,6 +196,17 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             if await load_whisper_model() is None:
                 await processing.edit_text("Завантаження моделі Whisper... зачекайте.")
 
+            # Для довгих файлів оновлюємо повідомлення
+            if duration and duration > 60:
+                async def update_long_processing():
+                    await asyncio.sleep(30)  # Через 30 секунд
+                    try:
+                        await processing.edit_text("🎤 Обробляю довгий файл... це може зайняти кілька хвилин ⏳")
+                    except Exception:  # noqa: BLE001
+                        pass
+                
+                asyncio.create_task(update_long_processing())
+
             text, language, quality = await transcribe_audio(path, user_id=user_id)
             if not text:
                 await processing.edit_text(f"Не вдалося розпізнати аудіо.\n{language}")
@@ -335,5 +347,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         finally:
             if os.path.exists(tmp.name):
                 os.remove(tmp.name)
+
 
 

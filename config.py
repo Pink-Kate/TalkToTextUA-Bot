@@ -28,7 +28,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 # Business limits
 MAX_AUDIO_DURATION = 600  # seconds (10 minutes)
 MAX_HISTORY_ENTRIES = 100
-TRANSCRIPTION_TIMEOUT = 300  # seconds (5 minutes) - максимальний час на транскрипцію
+TRANSCRIPTION_TIMEOUT = 900  # seconds (15 minutes) - максимальний час на транскрипцію для довгих файлів
 
 
 
