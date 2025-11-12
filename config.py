@@ -16,8 +16,10 @@ except (ImportError, Exception):
 # На Railway BOT_TOKEN має бути встановлено як змінна середовища
 BOT_TOKEN = os.getenv("BOT_TOKEN") or None
 
-# Whisper model preferences
-WHISPER_MODELS = ["small", "base", "medium"]
+# Whisper model preferences (порядок спроб завантаження)
+# Оптимізовано для швидкості: спочатку менші моделі для швидкої обробки
+# "base" - найшвидша, "small" - швидка з хорошою якістю, "medium" - найкраща якість
+WHISPER_MODELS = ["base", "small", "medium"]
 
 # Logging level
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
