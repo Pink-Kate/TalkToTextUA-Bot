@@ -8,6 +8,7 @@ import tempfile
 
 from utils import load_whisper_model
 from storage import get_user_settings
+from config import TRANSCRIPTION_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,15 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None):
             beam_size=beam_size,
         )
 
-    result = await loop.run_in_executor(None, run)
+    try:
+        result = await asyncio.wait_for(loop.run_in_executor(None, run), timeout=TRANSCRIPTION_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.error("Транскрипція перевищила таймаут %s секунд", TRANSCRIPTION_TIMEOUT)
+        return None, f"Транскрипція зайняла більше {TRANSCRIPTION_TIMEOUT // 60} хвилин. Спробуйте коротший аудіофайл.", None
+    except Exception as exc:
+        logger.error("Помилка під час транскрипції: %s", exc, exc_info=True)
+        return None, f"Помилка обробки: {str(exc)[:100]}", None
+    
     if result is None:
         return None, "Не вдалося розпізнати аудіо", None
 
@@ -102,5 +111,6 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None):
     quality_info = {"avg_logprob": avg_logprob, "no_speech_prob": result.get("no_speech_prob", 0.0)}
     logger.info("Розпізнавання завершено. language=%s, len(text)=%s", language, len(text))
     return text, language, quality_info
+
 
 
