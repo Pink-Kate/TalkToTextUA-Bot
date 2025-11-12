@@ -15,7 +15,6 @@ from storage import add_to_history, clear_chat_history, get_chat_history, get_us
 from transcription import download_audio_file, transcribe_audio
 from utils import (
     create_language_keyboard,
-    create_mode_keyboard,
     create_result_keyboard,
     create_start_keyboard,
     load_whisper_model,
@@ -30,10 +29,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if chat_type == "private":
         message = (
             "Привіт! Я перетворюю голосові у текст 🎙️\n\n"
-            "Надішли голосове або аудіофайл — я розшифрую його за секунди.\n\n"
+            "Надішли голосове або аудіофайл — я розшифрую його швидко та точно.\n\n"
             "Корисне:\n"
             "• /lang — обрати мову розпізнавання\n"
-            "• /mode — вибрати режим (точність/швидкість)\n"
             "• /export — експортувати останній результат"
         )
         await update.message.reply_text(message, reply_markup=create_start_keyboard())
@@ -49,11 +47,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     text = (
         "Як працює:\n\n"
         "1. Надішли голосове повідомлення або аудіофайл\n"
-        "2. Отримай текст за секунду\n\n"
+        "2. Отримай текст швидко та точно\n\n"
         "Підтримувані формати: голосові, .ogg, .mp3, .wav\n"
         "Команди:\n"
         "/lang — вибір мови\n"
-        "/mode — режим роботи\n"
         "/export — останній транскрипт у .txt\n"
         "/clear — очистити історію\n"
         "/privacy — приватність"
@@ -71,42 +68,6 @@ async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(
         "🌐 Оберіть мову розпізнавання:",
         reply_markup=create_language_keyboard(settings.get("language")),
-    )
-
-
-async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.message.from_user.id if update.message.from_user else None
-    if user_id is None:
-        await update.message.reply_text("Не вдалося визначити користувача.")
-        return
-
-    settings = get_user_settings(user_id)
-    current_mode = settings.get("mode", "balanced")
-
-    if context.args:
-        mode = context.args[0].lower()
-        if mode in {"fast", "balanced", "accurate"}:
-            settings["mode"] = mode
-            descriptions = {
-                "fast": "легка модель, швидко, але можливі неточності",
-                "balanced": "збалансований режим (за замовчуванням)",
-                "accurate": "велика модель, повільніше, але найкраща якість",
-            }
-            await update.message.reply_text(
-                f"Режим встановлено: {mode}\n{descriptions[mode]}",
-                reply_markup=create_mode_keyboard(mode),
-            )
-            return
-
-    descriptions = {
-        "fast": "легка модель, швидко, але можливі неточності",
-        "balanced": "збалансований режим (за замовчуванням)",
-        "accurate": "велика модель, повільніше, але найкраща якість",
-    }
-    await update.message.reply_text(
-        f"Поточний режим: {current_mode}\n{descriptions.get(current_mode, '')}\n\n"
-        "Оберіть новий режим:",
-        reply_markup=create_mode_keyboard(current_mode),
     )
 
 
@@ -301,33 +262,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"{emoji} Мову розпізнавання встановлено: {label}.\n\n"
                 "🌐 Оберіть мову розпізнавання:",
                 reply_markup=create_language_keyboard(settings.get("language")),
-            )
-        except BadRequest as e:
-            if "Message is not modified" in str(e):
-                # Повідомлення вже має такий самий вміст, ігноруємо помилку
-                pass
-            else:
-                raise
-
-    elif data.startswith("mode_"):
-        mode_code = data.split("_", 1)[1]
-        settings["mode"] = mode_code
-
-        names = {
-            "fast": "Швидкість",
-            "balanced": "Збалансований",
-            "accurate": "Точність",
-        }
-        descriptions = {
-            "fast": "легка модель, швидко, але можливі неточності",
-            "balanced": "збалансований режим (за замовчуванням)",
-            "accurate": "велика модель, повільніше, але найкраща якість",
-        }
-        try:
-            await query.edit_message_text(
-                f"Режим встановлено: {names.get(mode_code, mode_code)}\n\n{descriptions.get(mode_code, '')}\n\n"
-                "Оберіть новий режим:",
-                reply_markup=create_mode_keyboard(mode_code),
             )
         except BadRequest as e:
             if "Message is not modified" in str(e):

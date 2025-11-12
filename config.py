@@ -19,9 +19,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN") or None
 # Перевірка буде виконана в bot_runner.py при запуску, щоб не блокувати імпорт
 
 # Whisper model preferences (порядок спроб завантаження)
-# Оптимізовано для швидкості: спочатку менші моделі для швидкої обробки
-# "base" - найшвидша, "small" - швидка з хорошою якістю, "medium" - найкраща якість
-WHISPER_MODELS = ["base", "small", "medium"]
+# Використовуємо "small" для оптимального балансу швидкості та якості
+WHISPER_MODELS = ["small", "base", "medium"]
 
 # Logging level
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

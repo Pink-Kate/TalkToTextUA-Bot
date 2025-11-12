@@ -100,64 +100,45 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
 
     # Використовуємо синхронну версію, оскільки це викликається з async контексту
     # але get_user_settings тепер thread-safe
-    settings = get_user_settings(user_id) if user_id else {"language": None, "mode": "balanced"}
+    settings = get_user_settings(user_id) if user_id else {"language": None}
     target_lang = settings.get("language")
-    mode = settings.get("mode", "balanced")
 
-    logger.info("⚙️ Параметри: mode=%s, language=%s", mode, target_lang or "auto")
+    logger.info("⚙️ Параметри: language=%s", target_lang or "auto")
     
     # Оптимізовані таймаути на основі тривалості аудіо
-    # Для дуже коротких файлів (до 10 сек) - 30 сек, для коротких (до 1 хв) - 60 сек
-    # Для середніх (1-2 хв) - 2 хв, для довгих (2-5 хв) - 5 хв, для дуже довгих - 15 хв
+    # Збільшені таймаути для надійної обробки всіх файлів
     if audio_duration:
         if audio_duration <= 10:  # до 10 секунд
-            timeout = 30  # 30 секунд
+            timeout = 90  # 90 секунд (збільшено для надійності)
         elif audio_duration <= 60:  # до 1 хвилини
-            timeout = 60  # 1 хвилина
+            timeout = 180  # 3 хвилини
         elif audio_duration <= 120:  # до 2 хвилин
-            timeout = 120  # 2 хвилини
-        elif audio_duration <= 300:  # до 5 хвилин
             timeout = 300  # 5 хвилин
+        elif audio_duration <= 300:  # до 5 хвилин
+            timeout = 600  # 10 хвилин
         else:
             timeout = TRANSCRIPTION_TIMEOUT  # 15 хвилин
         logger.info("⏱️ Динамічний таймаут: %s сек (тривалість аудіо: %s сек)", timeout, audio_duration)
     else:
-        timeout = 120  # За замовчуванням 2 хвилини для файлів невідомої тривалості
+        timeout = 300  # За замовчуванням 5 хвилин для файлів невідомої тривалості
         logger.info("⏱️ Використовую стандартний таймаут: %s сек", timeout)
 
     loop = asyncio.get_event_loop()
 
-    # Оптимізація параметрів для максимальної швидкості
-    # Зменшуємо beam_size і best_of для всіх режимів для швидшої обробки
-    # Це значно прискорює обробку як маленьких, так і великих файлів
-    if mode == "fast":
-        # Режим швидкості - мінімальні параметри для максимальної швидкості
-        if audio_duration and audio_duration <= 60:  # до 1 хвилини
-            best_of, beam_size, temperature = 1, 1, 0.0
-        elif audio_duration and audio_duration <= 300:  # до 5 хвилин
-            best_of, beam_size, temperature = 1, 2, 0.0
-        else:  # більше 5 хвилин
-            best_of, beam_size, temperature = 1, 2, 0.0
-    elif mode == "accurate":
-        # Режим точності - оптимізовані параметри для швидкості з хорошою якістю
-        if audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
-            best_of, beam_size, temperature = 1, 2, 0.0
-        elif audio_duration and audio_duration <= 60:  # короткі (до 1 хв)
-            best_of, beam_size, temperature = 1, 3, 0.0
-        elif audio_duration and audio_duration <= 180:  # середні (до 3 хв)
-            best_of, beam_size, temperature = 2, 3, 0.0
-        elif audio_duration and audio_duration <= 300:  # довгі (до 5 хв)
-            best_of, beam_size, temperature = 2, 4, 0.0
-        else:  # дуже довгі (більше 5 хв)
-            best_of, beam_size, temperature = 2, 4, 0.0
-    else:  # balanced
-        # Збалансований режим - оптимальна швидкість з прийнятною якістю
-        if audio_duration and audio_duration <= 60:  # до 1 хвилини
-            best_of, beam_size, temperature = 1, 2, 0.0
-        elif audio_duration and audio_duration <= 300:  # до 5 хвилин
-            best_of, beam_size, temperature = 1, 3, 0.0
-        else:  # більше 5 хвилин
-            best_of, beam_size, temperature = 1, 3, 0.0
+    # Оптимальні параметри для швидкої та точної транскрипції
+    # Використовуємо збалансовані параметри, які забезпечують максимальну швидкість з хорошою якістю
+    if audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
+        best_of, beam_size, temperature = 1, 1, 0.0  # Мінімальні параметри для максимальної швидкості
+    elif audio_duration and audio_duration <= 30:  # короткі (до 30 сек)
+        best_of, beam_size, temperature = 1, 2, 0.0
+    elif audio_duration and audio_duration <= 60:  # короткі (до 1 хв)
+        best_of, beam_size, temperature = 1, 2, 0.0
+    elif audio_duration and audio_duration <= 180:  # середні (до 3 хв)
+        best_of, beam_size, temperature = 1, 3, 0.0
+    elif audio_duration and audio_duration <= 300:  # довгі (до 5 хв)
+        best_of, beam_size, temperature = 2, 3, 0.0
+    else:  # дуже довгі (більше 5 хв)
+        best_of, beam_size, temperature = 2, 4, 0.0
 
     logger.info("🔧 Whisper параметри: best_of=%s, beam_size=%s, temperature=%s", best_of, beam_size, temperature)
 
@@ -324,7 +305,7 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
     except asyncio.TimeoutError:
         elapsed = time.time() - start_time
         logger.error("⏰ Транскрипція перевищила таймаут %s секунд (працювала %.2f сек)", timeout, elapsed)
-        return None, f"Транскрипція зайняла більше {timeout // 60} хвилин. Спробуйте коротший аудіофайл або режим 'Швидкість'.", None
+        return None, f"Транскрипція зайняла більше {timeout // 60} хвилин. Спробуйте коротший аудіофайл.", None
     except Exception as exc:
         elapsed = time.time() - start_time
         logger.error("❌ Помилка під час транскрипції (через %.2f сек): %s", elapsed, exc, exc_info=True)

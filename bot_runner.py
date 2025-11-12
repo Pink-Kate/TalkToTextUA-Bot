@@ -31,7 +31,6 @@ from handlers import (
     handle_audio,
     help_command,
     lang_command,
-    mode_command,
     privacy_command,
     start,
 )
@@ -56,7 +55,6 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("lang", lang_command))
-    application.add_handler(CommandHandler("mode", mode_command))
     application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("clear", clear_command))
     application.add_handler(CommandHandler("privacy", privacy_command))

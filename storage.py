@@ -15,7 +15,7 @@ def get_user_settings(user_id: int) -> Dict[str, Any]:
     """Отримує налаштування користувача (thread-safe)."""
     with _storage_lock:
         if user_id not in user_settings:
-            user_settings[user_id] = {"language": None, "mode": "balanced"}
+            user_settings[user_id] = {"language": None}
         # Повертаємо посилання (налаштування змінюються через це посилання)
         return user_settings[user_id]
 

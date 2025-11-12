@@ -91,38 +91,12 @@ def create_language_keyboard(current_lang: str | None = None) -> InlineKeyboardM
     return InlineKeyboardMarkup(buttons)
 
 
-def create_mode_keyboard(current_mode: str = "balanced") -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                "✓ Точність" if current_mode == "accurate" else "Точність",
-                callback_data="mode_accurate",
-            ),
-            InlineKeyboardButton(
-                "✓ Швидкість" if current_mode == "fast" else "Швидкість",
-                callback_data="mode_fast",
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                "✓ Збалансований" if current_mode == "balanced" else "Збалансований",
-                callback_data="mode_balanced",
-            ),
-        ],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-
 def create_start_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton("Авто", callback_data="lang_auto"),
             InlineKeyboardButton("Українська", callback_data="lang_uk"),
             InlineKeyboardButton("English", callback_data="lang_en"),
-        ],
-        [
-            InlineKeyboardButton("Точність", callback_data="mode_accurate"),
-            InlineKeyboardButton("Швидкість", callback_data="mode_fast"),
         ],
         [InlineKeyboardButton("Експорт .txt", callback_data="export_txt")],
     ]
