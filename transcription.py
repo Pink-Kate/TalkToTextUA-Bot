@@ -126,13 +126,15 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
     loop = asyncio.get_event_loop()
 
     # Оптимальні параметри для швидкої та точної транскрипції
-    # Використовуємо збалансовані параметри, які забезпечують максимальну швидкість з хорошою якістю
-    if audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
-        best_of, beam_size, temperature = 1, 1, 0.0  # Мінімальні параметри для максимальної швидкості
+    # Для коротких голосових збільшуємо beam_size для кращої якості розпізнавання
+    if audio_duration and audio_duration <= 5:  # дуже короткі (до 5 сек)
+        best_of, beam_size, temperature = 2, 3, 0.0  # Трохи більші параметри для якості
+    elif audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
+        best_of, beam_size, temperature = 2, 3, 0.0  # Трохи більші параметри для якості
     elif audio_duration and audio_duration <= 30:  # короткі (до 30 сек)
-        best_of, beam_size, temperature = 1, 2, 0.0
+        best_of, beam_size, temperature = 2, 3, 0.0  # Збалансовані параметри
     elif audio_duration and audio_duration <= 60:  # короткі (до 1 хв)
-        best_of, beam_size, temperature = 1, 2, 0.0
+        best_of, beam_size, temperature = 1, 3, 0.0
     elif audio_duration and audio_duration <= 180:  # середні (до 3 хв)
         best_of, beam_size, temperature = 1, 3, 0.0
     elif audio_duration and audio_duration <= 300:  # довгі (до 5 хв)
@@ -163,33 +165,43 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
                 "ru": "Это русский текст.",
             }
 
-            # Базові параметри транскрипції - оптимізовані для максимальної швидкості
-            # Використовуємо параметри, які максимізують швидкість для всіх розмірів файлів
-            # Основні оптимізації:
-            # - condition_on_previous_text=False: значно прискорює обробку
-            # - word_timestamps=False: вимикає обчислення timestamps для швидкості
-            # - мінімальні beam_size та best_of: найбільший вплив на швидкість
+            # Базові параметри транскрипції - оптимізовані для швидкості та якості
+            # Для коротких голосових використовуємо більш чутливі параметри
             base_params = {
-                "fp16": False,  # False для CPU стабільності, True може бути швидше на GPU
+                "fp16": False,  # False для CPU стабільності
                 "temperature": temperature,
                 "best_of": best_of,
                 "beam_size": beam_size,
-                "no_speech_threshold": 0.6,  # Поріг для визначення мовчання
                 "compression_ratio_threshold": 2.4,  # Поріг для виявлення повторень
-                "condition_on_previous_text": False,  # Вимикаємо для швидкості (значно прискорює)
-                "word_timestamps": False,  # Вимикаємо timestamps для швидкості (значно прискорює обробку)
+                "condition_on_previous_text": False,  # Вимикаємо для швидкості
+                "word_timestamps": False,  # Вимикаємо timestamps для швидкості
             }
             
-            # Додаткові оптимізації на основі розміру файлу
-            if audio_duration and audio_duration <= 30:  # дуже короткі файли (до 30 сек)
-                # Для дуже коротких файлів - максимальна швидкість
+            # Оптимізації для коротких голосових повідомлень
+            # Для коротких файлів зменшуємо no_speech_threshold, щоб приймати навіть тихі звуки
+            if audio_duration and audio_duration <= 5:  # дуже короткі (до 5 сек)
+                # Для дуже коротких голосових - максимально чутливі параметри
                 base_params.update({
-                    "no_speech_threshold": 0.5,  # Більш чутливий поріг для коротких файлів
+                    "no_speech_threshold": 0.2,  # Дуже низький поріг - приймаємо майже все
                 })
-            elif audio_duration and audio_duration > 300:  # дуже довгі файли (більше 5 хв)
-                # Для дуже довгих файлів - оптимізації для стабільності
+            elif audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
+                # Для дуже коротких голосових - дуже чутливі параметри
                 base_params.update({
-                    "no_speech_threshold": 0.7,  # Більш консервативний поріг для довгих файлів
+                    "no_speech_threshold": 0.25,  # Дуже низький поріг - приймаємо навіть тихі звуки
+                })
+            elif audio_duration and audio_duration <= 30:  # короткі (до 30 сек)
+                # Для коротких голосових - чутливі параметри
+                base_params.update({
+                    "no_speech_threshold": 0.35,  # Низький поріг для коротких файлів
+                })
+            elif audio_duration and audio_duration <= 60:  # середні (до 1 хв)
+                base_params.update({
+                    "no_speech_threshold": 0.45,  # Середній поріг
+                })
+            else:
+                # Для довгих файлів - стандартні параметри
+                base_params.update({
+                    "no_speech_threshold": 0.6,  # Стандартний поріг
                 })
 
             if target_lang:
@@ -315,8 +327,68 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
         logger.error("❌ Whisper повернув None")
         return None, "Не вдалося розпізнати аудіо", None
 
-    text = result["text"].strip()
+    text = result.get("text", "").strip() if result.get("text") else ""
     language = result.get("language", "невідома")
+    no_speech_prob = result.get("no_speech_prob", 0.0)
+
+    # Перевіряємо, чи Whisper визначив, що в аудіо немає мови
+    # Для коротких файлів це може бути помилковим визначенням
+    # Спробуємо повторити транскрипцію з більш чутливими параметрами
+    if not text or (no_speech_prob > 0.7 and audio_duration and audio_duration <= 30):
+        logger.warning("⚠️ Whisper визначив, що в аудіо немає мови або текст порожній (no_speech_prob=%.2f, text='%s', duration=%s)", 
+                      no_speech_prob, text[:50] if text else "", audio_duration)
+        # Для коротких файлів спробуємо повторити з ще більш чутливими параметрами
+        if audio_duration and audio_duration <= 30:
+            logger.info("🔄 Повторюю транскрипцію для короткого файлу (%s сек) з максимально чутливими параметрами", audio_duration)
+            try:
+                # Використовуємо блокування моделі для повторної спроби
+                model_lock = _get_model_lock()
+                with model_lock:
+                    _clear_model_cache(model)
+                    # Повторна спроба з дуже чутливими параметрами
+                    retry_params = {
+                        "fp16": False,
+                        "temperature": 0.0,
+                        "best_of": 5,  # Більше варіантів для коротких файлів
+                        "beam_size": 5,  # Більший beam_size для кращої якості
+                        "no_speech_threshold": 0.05,  # Дуже низький поріг - приймаємо майже все
+                        "compression_ratio_threshold": 3.0,  # Більший поріг для коротких файлів
+                        "condition_on_previous_text": True,  # Увімкнено для кращої якості
+                        "word_timestamps": False,
+                    }
+                    # Повторна спроба з максимально чутливими параметрами
+                    retry_prompts = {
+                        "uk": "Це український текст. Використовуй українську мову.",
+                        "en": "This is English text.",
+                        "pl": "To jest język polski.",
+                        "de": "Das ist deutscher Text.",
+                        "ru": "Это русский текст.",
+                    }
+                    if target_lang and target_lang in retry_prompts:
+                        retry_params["initial_prompt"] = retry_prompts[target_lang]
+                        logger.info("🔄 Повторна транскрипція з мовою: %s", target_lang)
+                        retry_result = model.transcribe(audio_path, language=target_lang, **retry_params)
+                    else:
+                        retry_params["initial_prompt"] = "Це може бути українська, англійська, польська, німецька або інша мова."
+                        logger.info("🔄 Повторна транскрипція з автоматичним визначенням мови")
+                        retry_result = model.transcribe(audio_path, language=None, **retry_params)
+                    
+                    retry_text = retry_result.get("text", "").strip() if retry_result.get("text") else ""
+                    retry_no_speech = retry_result.get("no_speech_prob", 0.0)
+                    if retry_text:
+                        logger.info("✅ Повторна транскрипція успішна: '%s' (no_speech_prob=%.2f)", retry_text[:50], retry_no_speech)
+                        text = retry_text
+                        language = retry_result.get("language", language)
+                        no_speech_prob = retry_no_speech
+                        result = retry_result  # Оновлюємо result для segments
+                    else:
+                        logger.warning("⚠️ Повторна транскрипція також не дала результату (no_speech_prob=%.2f)", retry_no_speech)
+            except Exception as retry_exc:  # noqa: BLE001
+                logger.error("❌ Помилка при повторній транскрипції: %s", retry_exc, exc_info=True)
+
+    if not text:
+        logger.error("❌ Не вдалося отримати текст з транскрипції")
+        return None, "Не вдалося розпізнати аудіо. Спробуйте записати голосове повідомлення чіткіше.", None
 
     segments = result.get("segments", [])
     avg_logprob = None
@@ -325,8 +397,9 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
         if logs:
             avg_logprob = sum(logs) / len(logs)
 
-    quality_info = {"avg_logprob": avg_logprob, "no_speech_prob": result.get("no_speech_prob", 0.0)}
-    logger.info("✅ Розпізнавання завершено. language=%s, len(text)=%s, segments=%s", language, len(text), len(segments))
+    quality_info = {"avg_logprob": avg_logprob, "no_speech_prob": no_speech_prob}
+    logger.info("✅ Розпізнавання завершено. language=%s, len(text)=%s, segments=%s, no_speech_prob=%.2f", 
+                language, len(text), len(segments), no_speech_prob)
     return text, language, quality_info
 
 
