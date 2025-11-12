@@ -5,6 +5,7 @@ import os
 import asyncio
 import logging
 import tempfile
+import threading
 
 from utils import load_whisper_model
 from storage import get_user_settings
@@ -13,9 +14,13 @@ from config import TRANSCRIPTION_TIMEOUT
 logger = logging.getLogger(__name__)
 
 # Семафор для обмеження кількості одночасних транскрипцій
-# Дозволяє 2 паралельні транскрипції (Whisper не є thread-safe, але через executor це працює)
+# Whisper не є thread-safe і має проблеми з KV cache при паралельному використанні
+# Тому використовуємо тільки 1 паралельну транскрипцію для уникнення помилок
 _transcription_semaphore: asyncio.Semaphore | None = None
 _semaphore_lock: asyncio.Lock | None = None
+# Блокування для моделі - забезпечує, що тільки одна транскрипція виконується одночасно
+# Використовуємо threading.Lock, оскільки транскрипція виконується в executor (thread pool)
+_model_lock: threading.Lock | None = None
 
 
 async def _get_transcription_semaphore() -> asyncio.Semaphore:
@@ -26,11 +31,37 @@ async def _get_transcription_semaphore() -> asyncio.Semaphore:
             _semaphore_lock = asyncio.Lock()
         async with _semaphore_lock:
             if _transcription_semaphore is None:
-                # Дозволяємо 2 одночасні транскрипції для кращої продуктивності
-                # Можна збільшити до 3-4, якщо сервер має достатньо ресурсів
-                _transcription_semaphore = asyncio.Semaphore(2)
-                logger.info("🔒 Створено семафор для транскрипцій (макс. 2 одночасно)")
+                # Використовуємо тільки 1 паралельну транскрипцію для уникнення проблем з KV cache
+                _transcription_semaphore = asyncio.Semaphore(1)
+                logger.info("🔒 Створено семафор для транскрипцій (макс. 1 одночасно)")
     return _transcription_semaphore
+
+
+def _get_model_lock() -> threading.Lock:
+    """Отримує або створює блокування для моделі (threading.Lock для executor)."""
+    global _model_lock
+    if _model_lock is None:
+        _model_lock = threading.Lock()
+    return _model_lock
+
+
+def _clear_model_cache(model):
+    """Очищує KV cache моделі Whisper для уникнення конфліктів."""
+    try:
+        # Спробуємо очистити cache в декодері
+        if hasattr(model, "decoder") and hasattr(model.decoder, "kv_cache"):
+            model.decoder.kv_cache = None
+            logger.debug("🧹 Очищено KV cache в decoder")
+        # Спробуємо очистити cache в encoder (якщо є)
+        if hasattr(model, "encoder") and hasattr(model.encoder, "kv_cache"):
+            model.encoder.kv_cache = None
+            logger.debug("🧹 Очищено KV cache в encoder")
+        # Спробуємо очистити загальний cache моделі
+        if hasattr(model, "kv_cache"):
+            model.kv_cache = None
+            logger.debug("🧹 Очищено загальний KV cache")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("⚠️ Не вдалося очистити cache: %s", exc)
 
 
 async def download_audio_file(bot, file_id: str) -> str:
@@ -115,47 +146,123 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
         logger.info("▶️ Запуск Whisper.transcribe()...")
         transcribe_start = time.time()
         
-        prompts = {
-            "uk": "Це український текст. Використовуй українську мову.",
-            "en": "This is English text.",
-            "pl": "To jest język polski.",
-            "de": "Das ist deutscher Text.",
-            "ru": "Это русский текст.",
-        }
+        # Використовуємо блокування моделі для забезпечення послідовного доступу
+        # Це критично важливо для уникнення конфліктів з KV cache
+        model_lock = _get_model_lock()
+        
+        with model_lock:
+            # Очищуємо cache моделі перед транскрипцією, щоб уникнути конфліктів з KV cache
+            # Це допомагає вирішити проблему з різними розмірами тензорів
+            _clear_model_cache(model)
+            
+            prompts = {
+                "uk": "Це український текст. Використовуй українську мову.",
+                "en": "This is English text.",
+                "pl": "To jest język polski.",
+                "de": "Das ist deutscher Text.",
+                "ru": "Это русский текст.",
+            }
 
-        if target_lang:
-            prompt = prompts.get(target_lang, "")
+            # Параметри транскрипції
+            transcribe_params = {
+                "fp16": False,
+                "temperature": temperature,
+                "best_of": best_of,
+                "beam_size": beam_size,
+                "no_speech_threshold": 0.6,  # Поріг для визначення мовчання
+                "compression_ratio_threshold": 2.4,  # Поріг для виявлення повторень
+            }
+
+            if target_lang:
+                prompt = prompts.get(target_lang, "")
+                try:
+                    logger.info("🌐 Використовую мову: %s", target_lang)
+                    result = model.transcribe(
+                        audio_path,
+                        language=target_lang,
+                        initial_prompt=prompt or None,
+                        **transcribe_params,
+                    )
+                    elapsed = time.time() - transcribe_start
+                    logger.info("✅ Whisper завершив транскрипцію за %.2f секунд", elapsed)
+                    # Очищуємо cache після успішної транскрипції для наступної транскрипції
+                    _clear_model_cache(model)
+                    return result
+                except RuntimeError as exc:
+                    # Якщо помилка пов'язана з KV cache, спробуємо знову з очищеним cache
+                    error_msg = str(exc)
+                    if "Sizes of tensors" in error_msg or "kv_cache" in error_msg.lower() or "Expected size" in error_msg:
+                        logger.warning("⚠️ Помилка KV cache: %s, очищаю cache і повторюю", error_msg[:150])
+                        try:
+                            _clear_model_cache(model)
+                            # Повторна спроба з очищеним cache
+                            result = model.transcribe(
+                                audio_path,
+                                language=target_lang,
+                                initial_prompt=prompt or None,
+                                **transcribe_params,
+                            )
+                            elapsed = time.time() - transcribe_start
+                            logger.info("✅ Whisper завершив транскрипцію після повторної спроби за %.2f секунд", elapsed)
+                            # Очищуємо cache після успішної транскрипції
+                            _clear_model_cache(model)
+                            return result
+                        except Exception as retry_exc:  # noqa: BLE001
+                            logger.warning("⚠️ Повторна спроба не вдалася: %s, спробую auto", str(retry_exc)[:100])
+                            # Очищуємо cache перед переходом до auto
+                            _clear_model_cache(model)
+                            pass
+                    else:
+                        logger.warning("⚠️ Помилка з мовою %s: %s, спробую auto", target_lang, error_msg[:100])
+                        # Очищуємо cache перед переходом до auto
+                        _clear_model_cache(model)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("⚠️ Помилка з мовою %s: %s, спробую auto", target_lang, str(exc)[:100])
+                    # Очищуємо cache перед переходом до auto
+                    _clear_model_cache(model)
+                    pass
+
+            logger.info("🌐 Використовую автоматичне визначення мови")
             try:
-                logger.info("🌐 Використовую мову: %s", target_lang)
                 result = model.transcribe(
                     audio_path,
-                    language=target_lang,
-                    fp16=False,
-                    initial_prompt=prompt or None,
-                    temperature=temperature,
-                    best_of=best_of,
-                    beam_size=beam_size,
+                    language=None,
+                    initial_prompt="Це може бути українська, англійська, польська, німецька або інша мова.",
+                    **transcribe_params,
                 )
                 elapsed = time.time() - transcribe_start
                 logger.info("✅ Whisper завершив транскрипцію за %.2f секунд", elapsed)
+                # Очищуємо cache після успішної транскрипції для наступної транскрипції
+                _clear_model_cache(model)
                 return result
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("⚠️ Помилка з мовою %s: %s, спробую auto", target_lang, exc)
-                pass
-
-        logger.info("🌐 Використовую автоматичне визначення мови")
-        result = model.transcribe(
-            audio_path,
-            language=None,
-            fp16=False,
-            initial_prompt="Це може бути українська, англійська, польська, німецька або інша мова.",
-            temperature=temperature,
-            best_of=best_of,
-            beam_size=beam_size,
-        )
-        elapsed = time.time() - transcribe_start
-        logger.info("✅ Whisper завершив транскрипцію за %.2f секунд", elapsed)
-        return result
+            except RuntimeError as exc:
+                # Якщо помилка пов'язана з KV cache, спробуємо знову з очищеним cache
+                error_msg = str(exc)
+                if "Sizes of tensors" in error_msg or "kv_cache" in error_msg.lower() or "Expected size" in error_msg:
+                    logger.warning("⚠️ Помилка KV cache при auto: %s, очищаю cache і повторюю", error_msg[:150])
+                    try:
+                        _clear_model_cache(model)
+                        # Повторна спроба з очищеним cache
+                        result = model.transcribe(
+                            audio_path,
+                            language=None,
+                            initial_prompt="Це може бути українська, англійська, польська, німецька або інша мова.",
+                            **transcribe_params,
+                        )
+                        elapsed = time.time() - transcribe_start
+                        logger.info("✅ Whisper завершив транскрипцію після повторної спроби за %.2f секунд", elapsed)
+                        # Очищуємо cache після успішної транскрипції
+                        _clear_model_cache(model)
+                        return result
+                    except Exception as retry_exc:  # noqa: BLE001
+                        logger.error("❌ Повторна спроба не вдалася: %s", retry_exc)
+                        # Очищуємо cache навіть при помилці
+                        _clear_model_cache(model)
+                        raise
+                else:
+                    # Очищуємо cache при інших помилках
+                    _clear_model_cache(model)
+                    raise
 
     try:
         # Отримуємо доступ до семафора для паралельної обробки
