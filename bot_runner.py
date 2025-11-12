@@ -6,10 +6,69 @@ import logging
 import os
 import sys
 
-# Додаємо корінь проекту до sys.path, щоб Python міг знайти модуль config
+# КРИТИЧНО: Додаємо корінь проекту до sys.path ПЕРЕД будь-якими імпортами
+# Це гарантує, що Python знайде модуль config
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
+PROJECT_ROOT = BASE_DIR
+
+# Додаємо корінь проекту на початок sys.path (найвищий пріоритет)
+# Це гарантує, що кореневий config.py матиме пріоритет над bot_app/config.py
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+elif sys.path.index(PROJECT_ROOT) != 0:
+    # Якщо PROJECT_ROOT вже в sys.path, але не на початку, переміщуємо його на початок
+    sys.path.remove(PROJECT_ROOT)
+    sys.path.insert(0, PROJECT_ROOT)
+
+# Перевіряємо, що config.py існує в корені проекту
+config_file_path = os.path.join(PROJECT_ROOT, "config.py")
+if not os.path.exists(config_file_path):
+    raise FileNotFoundError(
+        f"config.py не знайдено в {PROJECT_ROOT}. "
+        f"Поточний робочий каталог: {os.getcwd()}. "
+        f"Файли в директорії: {os.listdir(PROJECT_ROOT) if os.path.exists(PROJECT_ROOT) else 'N/A'}"
+    )
+
+# Тепер імпортуємо config - він має бути доступним
+# Спочатку видаляємо можливий конфлікт з bot_app.config (якщо він був завантажений)
+if "config" in sys.modules:
+    # Перевіряємо, чи це кореневий config чи bot_app.config
+    loaded_config = sys.modules["config"]
+    loaded_path = getattr(loaded_config, "__file__", "")
+    if "bot_app" in loaded_path:
+        # Якщо завантажений bot_app.config, видаляємо його
+        del sys.modules["config"]
+        # Також видаляємо bot_app.config, якщо він існує
+        if "bot_app.config" in sys.modules:
+            del sys.modules["bot_app.config"]
+
+# Тепер імпортуємо config - він має знайти кореневий config.py
+try:
+    import config
+    # Перевіряємо, що це правильний config (кореневий)
+    config_path_loaded = getattr(config, "__file__", "")
+    if "bot_app" in config_path_loaded:
+        raise ImportError(f"Імпортовано bot_app.config замість кореневого config. Шлях: {config_path_loaded}")
+    
+    # Перевіряємо, що модуль містить необхідні атрибути
+    if not hasattr(config, "BOT_TOKEN"):
+        raise AttributeError(f"config.py не містить BOT_TOKEN. Доступні атрибути: {dir(config)}")
+    if not hasattr(config, "LOG_LEVEL"):
+        raise AttributeError(f"config.py не містить LOG_LEVEL. Доступні атрибути: {dir(config)}")
+except ImportError as e:
+    raise ImportError(
+        f"Не вдалося імпортувати config з {config_file_path}. "
+        f"PROJECT_ROOT: {PROJECT_ROOT}. "
+        f"Поточний робочий каталог: {os.getcwd()}. "
+        f"sys.path (перші 5): {sys.path[:5]}. "
+        f"Помилка: {e}"
+    ) from e
+except AttributeError as e:
+    raise AttributeError(
+        f"config.py не містить необхідних атрибутів. "
+        f"Шлях до config: {getattr(config, '__file__', 'невідомо')}. "
+        f"Помилка: {e}"
+    ) from e
 
 from telegram import Update
 from telegram.error import Conflict
@@ -22,7 +81,9 @@ from telegram.ext import (
     filters,
 )
 
-from config import BOT_TOKEN, LOG_LEVEL
+# Тепер імпортуємо з config - він точно доступний
+BOT_TOKEN = config.BOT_TOKEN
+LOG_LEVEL = config.LOG_LEVEL
 from handlers import (
     button_callback,
     clear_command,
