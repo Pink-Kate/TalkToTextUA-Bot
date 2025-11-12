@@ -37,7 +37,10 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Налаштування для паралельної обробки оновлень з різних чатів
+    # concurrent_updates=None означає необмежену паралельність (за замовчуванням)
+    # Це дозволяє обробляти повідомлення з різних чатів одночасно
+    application = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
