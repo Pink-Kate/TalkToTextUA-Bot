@@ -106,39 +106,58 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
 
     logger.info("⚙️ Параметри: mode=%s, language=%s", mode, target_lang or "auto")
     
-    # Динамічний таймаут на основі тривалості аудіо
-    # Для коротких файлів (до 2 хв) - 5 хв, для середніх (2-5 хв) - 10 хв, для довгих - 15 хв
+    # Оптимізовані таймаути на основі тривалості аудіо
+    # Для дуже коротких файлів (до 10 сек) - 30 сек, для коротких (до 1 хв) - 60 сек
+    # Для середніх (1-2 хв) - 2 хв, для довгих (2-5 хв) - 5 хв, для дуже довгих - 15 хв
     if audio_duration:
-        if audio_duration <= 120:  # до 2 хвилин
-            timeout = 300  # 5 хвилин
+        if audio_duration <= 10:  # до 10 секунд
+            timeout = 30  # 30 секунд
+        elif audio_duration <= 60:  # до 1 хвилини
+            timeout = 60  # 1 хвилина
+        elif audio_duration <= 120:  # до 2 хвилин
+            timeout = 120  # 2 хвилини
         elif audio_duration <= 300:  # до 5 хвилин
-            timeout = 600  # 10 хвилин
+            timeout = 300  # 5 хвилин
         else:
             timeout = TRANSCRIPTION_TIMEOUT  # 15 хвилин
         logger.info("⏱️ Динамічний таймаут: %s сек (тривалість аудіо: %s сек)", timeout, audio_duration)
     else:
-        timeout = TRANSCRIPTION_TIMEOUT
+        timeout = 120  # За замовчуванням 2 хвилини для файлів невідомої тривалості
         logger.info("⏱️ Використовую стандартний таймаут: %s сек", timeout)
 
     loop = asyncio.get_event_loop()
 
-    # Оптимізація параметрів для коротших файлів
-    if audio_duration and audio_duration <= 120:  # до 2 хвилин
-        # Для коротких файлів використовуємо більш швидкі параметри
-        if mode == "fast":
-            best_of, beam_size, temperature = 1, 2, 0.2
-        elif mode == "accurate":
-            best_of, beam_size, temperature = 3, 5, 0.0
-        else:
+    # Оптимізація параметрів для максимальної швидкості
+    # Зменшуємо beam_size і best_of для всіх режимів для швидшої обробки
+    # Це значно прискорює обробку як маленьких, так і великих файлів
+    if mode == "fast":
+        # Режим швидкості - мінімальні параметри для максимальної швидкості
+        if audio_duration and audio_duration <= 60:  # до 1 хвилини
+            best_of, beam_size, temperature = 1, 1, 0.0
+        elif audio_duration and audio_duration <= 300:  # до 5 хвилин
+            best_of, beam_size, temperature = 1, 2, 0.0
+        else:  # більше 5 хвилин
+            best_of, beam_size, temperature = 1, 2, 0.0
+    elif mode == "accurate":
+        # Режим точності - оптимізовані параметри для швидкості з хорошою якістю
+        if audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
+            best_of, beam_size, temperature = 1, 2, 0.0
+        elif audio_duration and audio_duration <= 60:  # короткі (до 1 хв)
             best_of, beam_size, temperature = 1, 3, 0.0
-    else:
-        # Для довгих файлів використовуємо стандартні параметри
-        if mode == "fast":
-            best_of, beam_size, temperature = 1, 3, 0.2
-        elif mode == "accurate":
-            best_of, beam_size, temperature = 5, 10, 0.0
-        else:
-            best_of, beam_size, temperature = 2, 5, 0.0
+        elif audio_duration and audio_duration <= 180:  # середні (до 3 хв)
+            best_of, beam_size, temperature = 2, 3, 0.0
+        elif audio_duration and audio_duration <= 300:  # довгі (до 5 хв)
+            best_of, beam_size, temperature = 2, 4, 0.0
+        else:  # дуже довгі (більше 5 хв)
+            best_of, beam_size, temperature = 2, 4, 0.0
+    else:  # balanced
+        # Збалансований режим - оптимальна швидкість з прийнятною якістю
+        if audio_duration and audio_duration <= 60:  # до 1 хвилини
+            best_of, beam_size, temperature = 1, 2, 0.0
+        elif audio_duration and audio_duration <= 300:  # до 5 хвилин
+            best_of, beam_size, temperature = 1, 3, 0.0
+        else:  # більше 5 хвилин
+            best_of, beam_size, temperature = 1, 3, 0.0
 
     logger.info("🔧 Whisper параметри: best_of=%s, beam_size=%s, temperature=%s", best_of, beam_size, temperature)
 
@@ -163,24 +182,46 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
                 "ru": "Это русский текст.",
             }
 
-            # Параметри транскрипції
-            transcribe_params = {
-                "fp16": False,
+            # Базові параметри транскрипції - оптимізовані для максимальної швидкості
+            # Використовуємо параметри, які максимізують швидкість для всіх розмірів файлів
+            # Основні оптимізації:
+            # - condition_on_previous_text=False: значно прискорює обробку
+            # - word_timestamps=False: вимикає обчислення timestamps для швидкості
+            # - мінімальні beam_size та best_of: найбільший вплив на швидкість
+            base_params = {
+                "fp16": False,  # False для CPU стабільності, True може бути швидше на GPU
                 "temperature": temperature,
                 "best_of": best_of,
                 "beam_size": beam_size,
                 "no_speech_threshold": 0.6,  # Поріг для визначення мовчання
                 "compression_ratio_threshold": 2.4,  # Поріг для виявлення повторень
+                "condition_on_previous_text": False,  # Вимикаємо для швидкості (значно прискорює)
+                "word_timestamps": False,  # Вимикаємо timestamps для швидкості (значно прискорює обробку)
             }
+            
+            # Додаткові оптимізації на основі розміру файлу
+            if audio_duration and audio_duration <= 30:  # дуже короткі файли (до 30 сек)
+                # Для дуже коротких файлів - максимальна швидкість
+                base_params.update({
+                    "no_speech_threshold": 0.5,  # Більш чутливий поріг для коротких файлів
+                })
+            elif audio_duration and audio_duration > 300:  # дуже довгі файли (більше 5 хв)
+                # Для дуже довгих файлів - оптимізації для стабільності
+                base_params.update({
+                    "no_speech_threshold": 0.7,  # Більш консервативний поріг для довгих файлів
+                })
 
             if target_lang:
                 prompt = prompts.get(target_lang, "")
                 try:
                     logger.info("🌐 Використовую мову: %s", target_lang)
+                    # Формуємо параметри для транскрипції
+                    transcribe_params = base_params.copy()
+                    if prompt:
+                        transcribe_params["initial_prompt"] = prompt
                     result = model.transcribe(
                         audio_path,
                         language=target_lang,
-                        initial_prompt=prompt or None,
                         **transcribe_params,
                     )
                     elapsed = time.time() - transcribe_start
@@ -196,11 +237,13 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
                         try:
                             _clear_model_cache(model)
                             # Повторна спроба з очищеним cache
+                            retry_params = base_params.copy()
+                            if prompt:
+                                retry_params["initial_prompt"] = prompt
                             result = model.transcribe(
                                 audio_path,
                                 language=target_lang,
-                                initial_prompt=prompt or None,
-                                **transcribe_params,
+                                **retry_params,
                             )
                             elapsed = time.time() - transcribe_start
                             logger.info("✅ Whisper завершив транскрипцію після повторної спроби за %.2f секунд", elapsed)
@@ -224,10 +267,12 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
 
             logger.info("🌐 Використовую автоматичне визначення мови")
             try:
+                # Для auto режиму використовуємо базовий prompt
+                transcribe_params = base_params.copy()
+                transcribe_params["initial_prompt"] = "Це може бути українська, англійська, польська, німецька або інша мова."
                 result = model.transcribe(
                     audio_path,
                     language=None,
-                    initial_prompt="Це може бути українська, англійська, польська, німецька або інша мова.",
                     **transcribe_params,
                 )
                 elapsed = time.time() - transcribe_start
@@ -243,11 +288,12 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
                     try:
                         _clear_model_cache(model)
                         # Повторна спроба з очищеним cache
+                        retry_params = base_params.copy()
+                        retry_params["initial_prompt"] = "Це може бути українська, англійська, польська, німецька або інша мова."
                         result = model.transcribe(
                             audio_path,
                             language=None,
-                            initial_prompt="Це може бути українська, англійська, польська, німецька або інша мова.",
-                            **transcribe_params,
+                            **retry_params,
                         )
                         elapsed = time.time() - transcribe_start
                         logger.info("✅ Whisper завершив транскрипцію після повторної спроби за %.2f секунд", elapsed)
