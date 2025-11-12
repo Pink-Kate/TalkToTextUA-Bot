@@ -3,13 +3,21 @@
 import os
 import sys
 
+# Додаємо корінь проекту до sys.path ПЕРШИМ, щоб всі модулі могли знайти config
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = BASE_DIR
-PARENT_DIR = os.path.dirname(PROJECT_ROOT)
 
-for path in {PROJECT_ROOT, PARENT_DIR}:
-    if path and path not in sys.path:
-        sys.path.insert(0, path)
+# Додаємо корінь проекту до sys.path, якщо його там немає
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# Перевіряємо, що config.py існує
+config_path = os.path.join(PROJECT_ROOT, "config.py")
+if not os.path.exists(config_path):
+    raise FileNotFoundError(
+        f"config.py не знайдено в {PROJECT_ROOT}. "
+        f"Переконайтеся, що файл існує в корені проекту."
+    )
 
 try:
     from bot_runner import main  # noqa: E402

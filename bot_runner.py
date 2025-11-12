@@ -3,6 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import sys
+
+# Додаємо корінь проекту до sys.path, щоб Python міг знайти модуль config
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from telegram import Update
 from telegram.error import Conflict
