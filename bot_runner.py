@@ -83,7 +83,7 @@ def main() -> None:
     application.add_error_handler(error_handler)
 
     async def log_updates(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.message and not update.message.text.startswith("/"):
+        if update.message and update.message.text and not update.message.text.startswith("/"):
             logger.info(
                 "📨 Оновлення: chat=%s user=%s voice=%s audio=%s document=%s",
                 update.message.chat.id,
@@ -117,5 +117,6 @@ def main() -> None:
     except Exception as exc:  # noqa: BLE001
         logger.error("Критична помилка: %s", exc, exc_info=True)
         raise
+
 
 
