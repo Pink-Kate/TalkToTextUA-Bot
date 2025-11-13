@@ -18,8 +18,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN") or None
 
 # Whisper model preferences (порядок спроб завантаження)
 # Оптимізовано для балансу швидкості та якості
-# "small" - хороша якість з прийнятною швидкістю, "base" - швидка резервна, "medium" - найкраща якість
-WHISPER_MODELS = ["small", "base", "medium"]
+# "turbo" - швидка і точна модель (оптимальний вибір)
+# "medium" - хороший баланс швидкості/якості (резервна)
+# "small" та "base" - швидкі резервні
+# "large-v3" - найточніша, але повільна (остання резервна)
+WHISPER_MODELS = ["turbo", "medium", "small", "base", "large-v3"]
 
 # Logging level
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
