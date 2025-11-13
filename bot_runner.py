@@ -12,6 +12,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
+# КРИТИЧНО: Видаляємо bot_app з sys.modules, якщо він був завантажений
+# Це гарантує, що Python імпортує кореневий handlers.py, а не bot_app/handlers.py
+if "bot_app" in sys.modules:
+    # Видаляємо bot_app та його підмодулі, щоб уникнути конфліктів
+    modules_to_remove = [key for key in sys.modules.keys() if key.startswith("bot_app")]
+    for module_name in modules_to_remove:
+        del sys.modules[module_name]
+
 from telegram import Update
 from telegram.error import Conflict
 from telegram.ext import (
