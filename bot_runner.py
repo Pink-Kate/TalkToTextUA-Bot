@@ -156,6 +156,7 @@ def main() -> None:
         logger.warning("Не вдалося видалити webhook: %s", exc)
 
     logger.info("Очікую оновлення від Telegram...")
+    logger.info("💡 Модель Whisper завантажиться автоматично при першому запиті")
 
     try:
         application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True, close_loop=False)

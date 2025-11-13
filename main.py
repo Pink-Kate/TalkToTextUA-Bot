@@ -1,17 +1,22 @@
-"""Railway entrypoint."""
+"""Сумісність: проксі до кореневого модуля `bot_runner`."""
+
+from __future__ import annotations
 
 import os
 import sys
 
-# Додаємо корінь проекту до sys.path ПЕРЕД будь-якими імпортами
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_CURRENT_DIR)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
-# Імпортуємо bot_runner - він знайде config
-from bot_runner import main  # noqa: E402
+try:
+    from bot_runner import main
+except ModuleNotFoundError as exc:  # pragma: no cover
+    raise ModuleNotFoundError(
+        "Не вдалося імпортувати `bot_runner`. Переконайтеся, що запускаєте скрипт "
+        "з кореня проєкту або що файли розміщені в одній директорії."
+    ) from exc
 
-
-if __name__ == "__main__":
-    main()
+__all__ = ["main"]
 
