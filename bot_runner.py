@@ -20,6 +20,17 @@ if "bot_app" in sys.modules:
     for module_name in modules_to_remove:
         del sys.modules[module_name]
 
+# КРИТИЧНО: Видаляємо storage з sys.modules, якщо він був завантажений з bot_app
+# Це гарантує, що Python імпортує кореневий storage.py, а не bot_app/storage.py
+if "storage" in sys.modules:
+    storage_module = sys.modules["storage"]
+    # Перевіряємо, чи це bot_app/storage.py
+    if hasattr(storage_module, "__file__") and storage_module.__file__:
+        storage_path = os.path.abspath(storage_module.__file__)
+        if "bot_app" in storage_path:
+            print("⚠️ Виявлено bot_app/storage.py, видаляю для правильного імпорту")
+            del sys.modules["storage"]
+
 from telegram import Update
 from telegram.error import Conflict
 from telegram.ext import (
