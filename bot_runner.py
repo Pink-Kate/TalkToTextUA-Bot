@@ -30,6 +30,9 @@ if "storage" in sys.modules:
         if "bot_app" in storage_path:
             print("⚠️ Виявлено bot_app/storage.py, видаляю для правильного імпорту")
             del sys.modules["storage"]
+            # Також видаляємо root_storage, якщо він був створений
+            if "root_storage" in sys.modules:
+                del sys.modules["root_storage"]
 
 from telegram import Update
 from telegram.error import Conflict
