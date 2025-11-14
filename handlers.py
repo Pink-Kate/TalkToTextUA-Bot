@@ -1,7 +1,6 @@
 """Основні обробники команд та повідомлень."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import tempfile
@@ -159,40 +158,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             if await load_whisper_model() is None:
                 await processing.edit_text("Завантаження моделі Whisper... зачекайте.")
 
-            # Проміжні оновлення статусу під час транскрипції
-            # Використовуємо позитивні повідомлення, щоб не виглядало як помилка
-            status_update_task = None
-            async def update_status_periodically():
-                updates = [
-                    (10, "🎤 Аналізую аудіо..."),
-                    (20, "🎤 Обробляю аудіо..."),
-                    (40, "🎤 Працюю над розпізнаванням..."),
-                    (60, "🎤 Майже готово..."),
-                    (90, "🎤 Фінальна обробка..."),
-                ]
-                
-                for delay, message in updates:
-                    await asyncio.sleep(delay)
-                    try:
-                        # Перевіряємо, чи транскрипція ще триває
-                        await processing.edit_text(message)
-                    except Exception:  # noqa: BLE001
-                        # Якщо не вдалося оновити (наприклад, транскрипція вже завершена), просто виходимо
-                        break
-            
-            # Запускаємо оновлення статусу для всіх файлів (навіть коротких)
-            # Це допомагає користувачу розуміти, що бот працює
-            status_update_task = asyncio.create_task(update_status_periodically())
-
             text, language, quality = await transcribe_audio(path, user_id=user_id, audio_duration=duration)
-            
-            # Скасовуємо оновлення статусу, якщо воно ще працює
-            if status_update_task and not status_update_task.done():
-                status_update_task.cancel()
-                try:
-                    await status_update_task
-                except asyncio.CancelledError:
-                    pass
             
             if not text:
                 # М'яке повідомлення без агресивних формулювань
