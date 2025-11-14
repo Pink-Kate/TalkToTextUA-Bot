@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 
 # Імпортуємо залежності
 from config import MAX_AUDIO_DURATION
-from storage import add_to_history, clear_chat_history, get_chat_history, get_user_settings
+from storage import add_to_history, clear_chat_history, get_chat_history, get_user_settings, get_user_count
 from transcription import download_audio_file, transcribe_audio
 from utils import (
     create_language_keyboard,
@@ -121,6 +121,30 @@ async def privacy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "• Командою /clear можна стерти історію"
     )
     await update.message.reply_text(text)
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда для адміністратора для перегляду статистики користувачів."""
+    if not update.message or not update.message.from_user:
+        return
+    
+    # Перевірка, чи користувач є адміністратором
+    admin_username = "Professional012"
+    user_username = update.message.from_user.username
+    
+    if user_username != admin_username:
+        await update.message.reply_text("❌ У вас немає доступу до цієї команди.")
+        return
+    
+    # Отримуємо кількість користувачів
+    user_count = get_user_count()
+    
+    message = (
+        f"📊 Статистика бота\n\n"
+        f"👥 Кількість користувачів: {user_count}"
+    )
+    
+    await update.message.reply_text(message)
 
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

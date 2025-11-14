@@ -81,6 +81,7 @@ from handlers import (
     lang_command,
     privacy_command,
     start,
+    stats_command,
 )
 
 logging.basicConfig(
@@ -106,6 +107,7 @@ def main() -> None:
     application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("clear", clear_command))
     application.add_handler(CommandHandler("privacy", privacy_command))
+    application.add_handler(CommandHandler("stats", stats_command))
 
     application.add_handler(CallbackQueryHandler(button_callback))
 
