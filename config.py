@@ -40,8 +40,8 @@ if ADMIN_USER_ID:
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
 if ADMIN_USERNAME:
-    # Видаляємо @ з початку, якщо є
-    ADMIN_USERNAME = ADMIN_USERNAME.lstrip("@").lower()
+    # Видаляємо @ з початку, якщо є, та конвертуємо в lowercase
+    ADMIN_USERNAME = ADMIN_USERNAME.strip().lstrip("@").lower()
 
 # Business limits
 MAX_AUDIO_DURATION = 600  # seconds (10 minutes)
