@@ -135,13 +135,40 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not update.message or not update.message.from_user:
         return
     
-    # Перевірка, чи користувач є адміністратором (через user_id)
-    from config import ADMIN_USER_ID
+    # Перевірка, чи користувач є адміністратором (через user_id або username)
+    from config import ADMIN_USER_ID, ADMIN_USERNAME
     
     user_id = update.message.from_user.id
+    user_username = update.message.from_user.username
+    user_username_lower = user_username.lower() if user_username else None
     
-    if not ADMIN_USER_ID or user_id != ADMIN_USER_ID:
-        await update.message.reply_text("❌ У вас немає доступу до цієї команди.")
+    # Логування для діагностики
+    logger.info("🔍 Перевірка доступу: user_id=%s, username=@%s, ADMIN_USER_ID=%s, ADMIN_USERNAME=%s", 
+                user_id, user_username or "None", ADMIN_USER_ID, ADMIN_USERNAME or "None")
+    
+    # Перевірка доступу (через user_id або username)
+    has_access = False
+    
+    if ADMIN_USER_ID and user_id == ADMIN_USER_ID:
+        has_access = True
+        logger.info("✅ Доступ дозволено через ADMIN_USER_ID: user_id=%s", user_id)
+    elif ADMIN_USERNAME and user_username_lower == ADMIN_USERNAME:
+        has_access = True
+        logger.info("✅ Доступ дозволено через ADMIN_USERNAME: @%s", user_username)
+    
+    if not has_access:
+        if not ADMIN_USER_ID and not ADMIN_USERNAME:
+            logger.warning("⚠️ ADMIN_USER_ID та ADMIN_USERNAME не встановлені в config")
+            await update.message.reply_text(
+                "❌ ADMIN_USER_ID або ADMIN_USERNAME не налаштовано.\n"
+                "Додайте у .env:\n"
+                "ADMIN_USERNAME=ваш_username\n"
+                "або\n"
+                "ADMIN_USER_ID=ваш_user_id"
+            )
+        else:
+            logger.info("❌ Доступ заборонено: user_id=%s, username=@%s", user_id, user_username or "None")
+            await update.message.reply_text("❌ У вас немає доступу до цієї команди.")
         return
     
     # Отримуємо детальну статистику

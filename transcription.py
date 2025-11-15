@@ -133,20 +133,20 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
     # Для української мови використовуємо більші значення для кращої якості
     # target_lang вже отримано вище (рядок 125)
     
-    # Спеціальні параметри для української мови (більші значення для кращої якості)
+    # Спеціальні параметри для української мови (оптимізовано для швидкості з хорошою якістю)
     if target_lang == "uk":
         if audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
-            best_of, beam_size, temperature = 2, 3, 0.0  # Більше для української
+            best_of, beam_size, temperature = 1, 3, 0.0  # Швидко для української
         elif audio_duration and audio_duration <= 30:  # короткі (до 30 сек)
-            best_of, beam_size, temperature = 2, 4, 0.0  # Більше для української
+            best_of, beam_size, temperature = 1, 3, 0.0  # Швидко для української
         elif audio_duration and audio_duration <= 60:  # короткі (до 1 хв)
-            best_of, beam_size, temperature = 3, 4, 0.0  # Більше для української
+            best_of, beam_size, temperature = 1, 4, 0.0  # Швидко з кращою якістю
         elif audio_duration and audio_duration <= 180:  # середні (до 3 хв)
-            best_of, beam_size, temperature = 3, 5, 0.0  # Більше для української
+            best_of, beam_size, temperature = 2, 4, 0.0  # Збалансовано
         elif audio_duration and audio_duration <= 300:  # довгі (до 5 хв)
-            best_of, beam_size, temperature = 4, 5, 0.0  # Більше для української
+            best_of, beam_size, temperature = 2, 5, 0.0  # Для довгих - якість
         else:  # дуже довгі (більше 5 хв)
-            best_of, beam_size, temperature = 5, 5, 0.0  # Максимальна якість для української
+            best_of, beam_size, temperature = 3, 5, 0.0  # Максимальна якість для дуже довгих
     else:
         # Стандартні параметри для інших мов
         if audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
@@ -179,13 +179,9 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
             _clear_model_cache(model)
             
             # Покращені промпти для кращого розпізнавання мови та контексту
-            # Для української мови використовуємо детальний промпт з прикладами літер
+            # Для української мови використовуємо короткий але ефективний промпт
             prompts = {
-                "uk": (
-                    "Це українська мова. Розпізнай український текст точно та з правильними літерами українського алфавіту. "
-                    "Використовуй правильні українські літери: і, ї, є, ґ. Приклади слів: Україна, Київ, їжа, єдиний, ґрунт. "
-                    "Не плутай українські літери з російськими. Розпізнай текст дослівно з дотриманням української орфографії та пунктуації."
-                ),
+                "uk": "Це українська мова. Розпізнай текст точно з правильними українськими літерами: і, ї, є, ґ.",
                 "en": "This is English language. Transcribe the English text accurately.",
                 "pl": "To jest język polski. Rozpoznaj polski tekst dokładnie.",
                 "de": "Das ist deutsche Sprache. Erkenne den deutschen Text genau.",
@@ -206,55 +202,30 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
             
             # Оптимізації для коротких голосових повідомлень
             # Баланс між чутливістю та якістю розпізнавання
-            # Для української мови використовуємо більш чутливі параметри
-            if target_lang == "uk":
-                # Спеціальні параметри для української мови (більш чутливі)
-                if audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
-                    base_params.update({
-                        "no_speech_threshold": 0.25,  # Більш чутливий для української
-                        "compression_ratio_threshold": 2.4,
-                    })
-                elif audio_duration and audio_duration <= 30:  # короткі (до 30 сек)
-                    base_params.update({
-                        "no_speech_threshold": 0.3,  # Більш чутливий для української
-                        "compression_ratio_threshold": 2.4,
-                    })
-                elif audio_duration and audio_duration <= 60:  # середні (до 1 хв)
-                    base_params.update({
-                        "no_speech_threshold": 0.35,  # Більш чутливий для української
-                        "compression_ratio_threshold": 2.4,
-                    })
-                else:
-                    # Для довгих файлів - трохи менший поріг для української
-                    base_params.update({
-                        "no_speech_threshold": 0.5,  # Більш чутливий для української
-                        "compression_ratio_threshold": 2.4,
-                    })
+            # Стандартні параметри для всіх мов (включно з українською)
+            if audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
+                # Для дуже коротких голосових - чутливі параметри
+                base_params.update({
+                    "no_speech_threshold": 0.3,  # Низький поріг для коротких файлів
+                    "compression_ratio_threshold": 2.4,
+                })
+            elif audio_duration and audio_duration <= 30:  # короткі (до 30 сек)
+                # Для коротких голосових - збалансовані параметри
+                base_params.update({
+                    "no_speech_threshold": 0.4,  # Середньо-низький поріг
+                    "compression_ratio_threshold": 2.4,
+                })
+            elif audio_duration and audio_duration <= 60:  # середні (до 1 хв)
+                base_params.update({
+                    "no_speech_threshold": 0.5,  # Середній поріг
+                    "compression_ratio_threshold": 2.4,
+                })
             else:
-                # Стандартні параметри для інших мов
-                if audio_duration and audio_duration <= 10:  # дуже короткі (до 10 сек)
-                    # Для дуже коротких голосових - чутливі параметри
-                    base_params.update({
-                        "no_speech_threshold": 0.3,  # Низький поріг для коротких файлів
-                        "compression_ratio_threshold": 2.4,
-                    })
-                elif audio_duration and audio_duration <= 30:  # короткі (до 30 сек)
-                    # Для коротких голосових - збалансовані параметри
-                    base_params.update({
-                        "no_speech_threshold": 0.4,  # Середньо-низький поріг
-                        "compression_ratio_threshold": 2.4,
-                    })
-                elif audio_duration and audio_duration <= 60:  # середні (до 1 хв)
-                    base_params.update({
-                        "no_speech_threshold": 0.5,  # Середній поріг
-                        "compression_ratio_threshold": 2.4,
-                    })
-                else:
-                    # Для довгих файлів - стандартні параметри
-                    base_params.update({
-                        "no_speech_threshold": 0.6,  # Стандартний поріг
-                        "compression_ratio_threshold": 2.4,
-                    })
+                # Для довгих файлів - стандартні параметри
+                base_params.update({
+                    "no_speech_threshold": 0.6,  # Стандартний поріг
+                    "compression_ratio_threshold": 2.4,
+                })
 
             if target_lang:
                 prompt = prompts.get(target_lang, "")
