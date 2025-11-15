@@ -162,7 +162,10 @@ def main() -> None:
 
     logger.info("=" * 50)
     logger.info("🚀 БОТ ЗАПУСКАЄТЬСЯ...")
-    logger.info("✅ Токен завантажено: %s", "Так" if BOT_TOKEN else "НІ")
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN не встановлено!")
+    else:
+        logger.info("✅ Токен завантажено")
     logger.info("=" * 50)
 
     try:

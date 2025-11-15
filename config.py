@@ -27,6 +27,15 @@ WHISPER_MODELS = ["turbo", "medium", "small", "base", "large-v3"]
 # Logging level
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+# Admin user ID (для команди /stats)
+# Отримати свій user_id можна через @userinfobot або @getidsbot
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
+if ADMIN_USER_ID:
+    try:
+        ADMIN_USER_ID = int(ADMIN_USER_ID)
+    except ValueError:
+        ADMIN_USER_ID = None
+
 # Business limits
 MAX_AUDIO_DURATION = 600  # seconds (10 minutes)
 MAX_HISTORY_ENTRIES = 100

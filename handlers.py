@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 
 # Імпортуємо залежності
 from config import MAX_AUDIO_DURATION
-from storage import add_to_history, clear_chat_history, get_chat_history, get_user_settings, get_user_count
+from storage import add_to_history, clear_chat_history, get_chat_history, get_user_settings, get_user_count, get_detailed_stats
 from transcription import download_audio_file, transcribe_audio
 from utils import (
     create_language_keyboard,
@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_type = update.message.chat.type
+    
+    # Реєструємо користувача при взаємодії з ботом
+    if update.message.from_user:
+        from storage import register_user
+        register_user(update.message.from_user.id)
 
     if chat_type == "private":
         message = (
@@ -124,27 +129,108 @@ async def privacy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда для адміністратора для перегляду статистики користувачів."""
+    """Команда для адміністратора для перегляду детальної статистики бота."""
+    import datetime
+    
     if not update.message or not update.message.from_user:
         return
     
-    # Перевірка, чи користувач є адміністратором
-    admin_username = "Professional012"
-    user_username = update.message.from_user.username
+    # Перевірка, чи користувач є адміністратором (через user_id)
+    from config import ADMIN_USER_ID
     
-    if user_username != admin_username:
+    user_id = update.message.from_user.id
+    
+    if not ADMIN_USER_ID or user_id != ADMIN_USER_ID:
         await update.message.reply_text("❌ У вас немає доступу до цієї команди.")
         return
     
-    # Отримуємо кількість користувачів
-    user_count = get_user_count()
+    # Отримуємо детальну статистику
+    stats = get_detailed_stats()
     
-    message = (
-        f"📊 Статистика бота\n\n"
-        f"👥 Кількість користувачів: {user_count}"
-    )
+    # Формуємо повідомлення з детальною статистикою
+    message_parts = ["📊 <b>ДЕТАЛЬНА СТАТИСТИКА БОТА</b>\n"]
     
-    await update.message.reply_text(message)
+    # Загальна статистика
+    message_parts.append("📈 <b>Загальна статистика:</b>")
+    message_parts.append(f"👥 Унікальних користувачів: <b>{stats['total_users']}</b>")
+    message_parts.append(f"💬 Унікальних чатів: <b>{stats['unique_chats']}</b>")
+    message_parts.append(f"🎤 Всього транскрипцій: <b>{stats['total_transcriptions']}</b>")
+    message_parts.append(f"⚙️ Користувачів з налаштуваннями: <b>{stats['users_with_settings']}</b>")
+    
+    # Статистика текстів
+    message_parts.append("\n📝 <b>Статистика текстів:</b>")
+    message_parts.append(f"📏 Всього символів: <b>{stats['total_text_length']:,}</b>")
+    if stats['total_transcriptions'] > 0:
+        message_parts.append(f"📊 Середня довжина: <b>{stats['avg_text_length']:.1f}</b> символів")
+    
+    # Найпопулярніші мови транскрипцій
+    if stats['top_languages']:
+        message_parts.append("\n🌍 <b>Найпопулярніші мови транскрипцій:</b>")
+        lang_emoji = {
+            "uk": "🇺🇦",
+            "en": "🇬🇧",
+            "pl": "🇵🇱",
+            "de": "🇩🇪",
+            "ru": "🇷🇺",
+        }
+        for lang, count in stats['top_languages']:
+            emoji = lang_emoji.get(lang, "🌐")
+            lang_name = {
+                "uk": "Українська",
+                "en": "English",
+                "pl": "Polski",
+                "de": "Deutsch",
+                "ru": "Русский",
+            }.get(lang, lang)
+            message_parts.append(f"{emoji} {lang_name}: <b>{count}</b>")
+    
+    # Налаштування мов користувачів
+    if stats['top_user_languages']:
+        message_parts.append("\n⚙️ <b>Налаштування мов користувачів:</b>")
+        lang_emoji = {
+            "uk": "🇺🇦",
+            "en": "🇬🇧",
+            "pl": "🇵🇱",
+            "de": "🇩🇪",
+            "ru": "🇷🇺",
+            "auto": "🌐",
+        }
+        for lang, count in stats['top_user_languages']:
+            emoji = lang_emoji.get(lang, "🌐")
+            lang_name = {
+                "uk": "Українська",
+                "en": "English",
+                "pl": "Polski",
+                "de": "Deutsch",
+                "ru": "Русский",
+                "auto": "Авто",
+            }.get(lang, lang)
+            message_parts.append(f"{emoji} {lang_name}: <b>{count}</b>")
+    
+    # Остання активність
+    if stats['last_activity']:
+        message_parts.append("\n🕐 <b>Остання активність:</b>")
+        try:
+            now = datetime.datetime.now(stats['last_activity'].tzinfo) if stats['last_activity'].tzinfo else datetime.datetime.now()
+            time_diff = now - stats['last_activity']
+            
+            if time_diff.days > 0:
+                time_str = f"{time_diff.days} дн. {time_diff.seconds // 3600} год. тому"
+            elif time_diff.seconds >= 3600:
+                time_str = f"{time_diff.seconds // 3600} год. {(time_diff.seconds % 3600) // 60} хв. тому"
+            elif time_diff.seconds >= 60:
+                time_str = f"{time_diff.seconds // 60} хв. тому"
+            else:
+                time_str = "щойно"
+            
+            message_parts.append(f"⏰ {time_str}")
+            message_parts.append(f"📅 {stats['last_activity'].strftime('%d.%m.%Y %H:%M:%S')}")
+        except Exception:
+            pass
+    
+    message = "\n".join(message_parts)
+    
+    await update.message.reply_text(message, parse_mode="HTML")
 
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
