@@ -159,13 +159,30 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not has_access:
         if not ADMIN_USER_ID and not ADMIN_USERNAME:
             logger.warning("⚠️ ADMIN_USER_ID та ADMIN_USERNAME не встановлені в config")
-            await update.message.reply_text(
-                "❌ ADMIN_USER_ID або ADMIN_USERNAME не налаштовано.\n"
-                "Додайте у .env:\n"
-                "ADMIN_USERNAME=ваш_username\n"
-                "або\n"
-                "ADMIN_USER_ID=ваш_user_id"
-            )
+            # Формуємо детальне повідомлення з інструкціями
+            message_parts = [
+                "❌ ADMIN_USER_ID або ADMIN_USERNAME не налаштовано.\n",
+                "📋 <b>Як налаштувати:</b>\n",
+                "1️⃣ <b>Отримайте ваш User ID:</b>",
+                "   • Напишіть @userinfobot або @getidsbot",
+                "   • Скопіюйте ваш User ID\n",
+                "2️⃣ <b>Або використайте ваш Username:</b>",
+                "   • Ваш username без @ (наприклад: Professional012)\n",
+                "3️⃣ <b>Додайте у .env файл (локально) або у Railway Variables:</b>",
+                "   ADMIN_USER_ID=123456789",
+                "   або",
+                "   ADMIN_USERNAME=your_username\n",
+                "💡 <b>Ваші дані:</b>",
+                f"   User ID: <code>{user_id}</code>",
+            ]
+            if user_username:
+                message_parts.append(f"   Username: <code>{user_username}</code>")
+            else:
+                message_parts.append("   Username: не встановлено (встановіть у налаштуваннях Telegram)")
+            
+            message_parts.append("\n⚠️ Після додавання змінної перезапустіть бота!")
+            
+            await update.message.reply_text("\n".join(message_parts), parse_mode="HTML")
         else:
             logger.info("❌ Доступ заборонено: user_id=%s, username=@%s", user_id, user_username or "None")
             await update.message.reply_text("❌ У вас немає доступу до цієї команди.")
