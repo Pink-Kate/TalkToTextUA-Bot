@@ -71,7 +71,7 @@ def _clear_model_cache(model):
 
 async def download_audio_file(bot, file_id: str) -> str:
     file = await bot.get_file(file_id)
-    logger.info("Отримано файл: %s (%s байт)", file.file_path, file.file_size)
+    logger.debug("Отримано файл: %s (%s байт)", file.file_path, file.file_size)
 
     extension = file.file_path.split(".")[-1] if "." in file.file_path else "ogg"
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f".{extension}")
@@ -86,7 +86,7 @@ async def download_audio_file(bot, file_id: str) -> str:
     # Конвертуємо в wav для кращої якості розпізнавання (якщо не вже wav/ogg)
     if extension.lower() not in ("wav", "ogg") and PYDUB_AVAILABLE:
         try:
-            logger.info("🔄 Конвертую аудіо в wav для кращої якості...")
+            logger.debug("🔄 Конвертую аудіо в wav для кращої якості...")
             audio = AudioSegment.from_file(tmp_path)
             wav_path = tmp_path.rsplit(".", 1)[0] + ".wav"
             audio.export(wav_path, format="wav")
@@ -94,7 +94,7 @@ async def download_audio_file(bot, file_id: str) -> str:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             tmp_path = wav_path
-            logger.info("✅ Аудіо конвертовано в wav")
+            logger.debug("✅ Аудіо конвертовано в wav")
         except Exception as exc:  # noqa: BLE001
             logger.warning("⚠️ Не вдалося конвертувати аудіо в wav: %s, використовую оригінал", exc)
     
@@ -105,7 +105,7 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
     import time
     start_time = time.time()
     
-    logger.info("🔍 Початок транскрипції: %s", audio_path)
+    logger.debug("🔍 Початок транскрипції: %s", audio_path)
     
     model = await load_whisper_model()
     if model is None:
@@ -117,14 +117,14 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
         return None, f"Файл не знайдено: {audio_path}", None
 
     file_size = os.path.getsize(audio_path)
-    logger.info("📊 Розмір файлу: %s байт (%.2f МБ)", file_size, file_size / (1024 * 1024))
+    logger.debug("📊 Розмір файлу: %s байт (%.2f МБ)", file_size, file_size / (1024 * 1024))
 
     # Використовуємо синхронну версію, оскільки це викликається з async контексту
     # але get_user_settings тепер thread-safe
     settings = get_user_settings(user_id) if user_id else {"language": None}
     target_lang = settings.get("language")
 
-    logger.info("⚙️ Параметри: language=%s", target_lang or "auto")
+    logger.debug("⚙️ Параметри: language=%s", target_lang or "auto")
 
     loop = asyncio.get_event_loop()
 
@@ -162,11 +162,11 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
         else:  # дуже довгі (більше 5 хв)
             best_of, beam_size, temperature = 3, 5, 0.0  # Максимальна якість для дуже довгих
 
-    logger.info("🔧 Whisper параметри: best_of=%s, beam_size=%s, temperature=%s (для мови: %s)", 
+    logger.debug("🔧 Whisper параметри: best_of=%s, beam_size=%s, temperature=%s (для мови: %s)", 
                 best_of, beam_size, temperature, target_lang or "auto")
 
     def run():
-        logger.info("▶️ Запуск Whisper.transcribe()...")
+        logger.debug("▶️ Запуск Whisper.transcribe()...")
         transcribe_start = time.time()
         
         # Використовуємо блокування моделі для забезпечення послідовного доступу
@@ -230,7 +230,7 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
             if target_lang:
                 prompt = prompts.get(target_lang, "")
                 try:
-                    logger.info("🌐 Використовую мову: %s", target_lang)
+                    logger.debug("🌐 Використовую мову: %s", target_lang)
                     # Формуємо параметри для транскрипції
                     transcribe_params = base_params.copy()
                     if prompt:
@@ -241,11 +241,11 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
                     # Для української мови використовуємо task="transcribe" явно
                     if target_lang == "uk":
                         transcribe_params["task"] = "transcribe"  # Явно вказуємо транскрипцію для української
-                        logger.info("🇺🇦 Використовую режим транскрипції для української мови")
+                        logger.debug("🇺🇦 Використовую режим транскрипції для української мови")
                     else:
                         use_translate = True
                         transcribe_params["task"] = "translate"
-                        logger.info("🔄 Використовую режим перекладу на %s", target_lang)
+                        logger.debug("🔄 Використовую режим перекладу на %s", target_lang)
                     
                     result = model.transcribe(
                         audio_path,
@@ -253,7 +253,7 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
                         **transcribe_params,
                     )
                     elapsed = time.time() - transcribe_start
-                    logger.info("✅ Whisper завершив транскрипцію за %.2f секунд", elapsed)
+                    logger.debug("✅ Whisper завершив транскрипцію за %.2f секунд", elapsed)
                     # Очищуємо cache після успішної транскрипції для наступної транскрипції
                     _clear_model_cache(model)
                     return result
@@ -278,7 +278,7 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
                                 **retry_params,
                             )
                             elapsed = time.time() - transcribe_start
-                            logger.info("✅ Whisper завершив транскрипцію після повторної спроби за %.2f секунд", elapsed)
+                            logger.debug("✅ Whisper завершив транскрипцію після повторної спроби за %.2f секунд", elapsed)
                             # Очищуємо cache після успішної транскрипції
                             _clear_model_cache(model)
                             return result
@@ -297,7 +297,7 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
                     _clear_model_cache(model)
                     pass
 
-            logger.info("🌐 Використовую автоматичне визначення мови")
+            logger.debug("🌐 Використовую автоматичне визначення мови")
             try:
                 # Для auto режиму використовуємо покращений prompt для кращого розпізнавання
                 transcribe_params = base_params.copy()
@@ -345,14 +345,14 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
     try:
         # Отримуємо доступ до семафора для паралельної обробки
         semaphore = await _get_transcription_semaphore()
-        logger.info("🔒 Очікую дозвіл на транскрипцію...")
+        logger.debug("🔒 Очікую дозвіл на транскрипцію...")
         
         async with semaphore:
-            logger.info("✅ Отримано дозвіл, починаю транскрипцію")
+            logger.debug("✅ Отримано дозвіл, починаю транскрипцію")
             # Виконуємо транскрипцію без таймауту - дозволяємо працювати до кінця
             result = await loop.run_in_executor(None, run)
             total_elapsed = time.time() - start_time
-            logger.info("⏱️ Загальний час транскрипції: %.2f секунд (%.2f хвилин)", total_elapsed, total_elapsed / 60)
+            logger.debug("⏱️ Загальний час транскрипції: %.2f секунд (%.2f хвилин)", total_elapsed, total_elapsed / 60)
     except Exception as exc:
         elapsed = time.time() - start_time
         logger.error("❌ Помилка під час транскрипції (через %.2f сек): %s", elapsed, exc, exc_info=True)
@@ -389,7 +389,7 @@ async def transcribe_audio(audio_path: str, user_id: int | None = None, audio_du
             avg_logprob = sum(logs) / len(logs)
 
     quality_info = {"avg_logprob": avg_logprob, "no_speech_prob": no_speech_prob}
-    logger.info("✅ Розпізнавання завершено. language=%s, len(text)=%s, segments=%s, no_speech_prob=%.2f", 
+    logger.debug("✅ Розпізнавання завершено. language=%s, len(text)=%s, segments=%s, no_speech_prob=%.2f", 
                 language, len(text), len(segments), no_speech_prob)
     return text, language, quality_info
 

@@ -144,21 +144,8 @@ def main() -> None:
 
     application.add_error_handler(error_handler)
 
-    async def log_updates(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.message:
-            return
-        text = getattr(update.message, "text", None)
-        if text and not text.startswith("/"):
-            logger.info(
-                "📨 Оновлення: chat=%s user=%s voice=%s audio=%s document=%s",
-                update.message.chat.id,
-                update.message.from_user.id if update.message.from_user else None,
-                bool(update.message.voice),
-                bool(update.message.audio),
-                bool(update.message.document),
-            )
-
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_updates), group=99)
+    # Видалено детальне логування кожного оновлення для зменшення споживання ресурсів
+    # Логування залишається тільки для помилок та важливих подій
 
     logger.info("=" * 50)
     logger.info("🚀 БОТ ЗАПУСКАЄТЬСЯ...")
@@ -178,7 +165,19 @@ def main() -> None:
     logger.info("💡 Модель Whisper завантажиться автоматично при першому запиті")
 
     try:
-        application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True, close_loop=False)
+        # Оптимізація для Railway: збільшуємо інтервал polling для зменшення навантаження
+        # poll_interval=5.0 означає запити кожні 5 секунд (замість дефолтного ~0.5-1 сек)
+        # Це значно зменшує споживання ресурсів (CPU, мережа, пам'ять)
+        # bootstrap_retries=3 - кількість спроб підключення
+        # read_timeout=30 - таймаут читання
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            close_loop=False,
+            poll_interval=5.0,  # Оновлення кожні 5 секунд (оптимізовано для Railway)
+            bootstrap_retries=3,
+            read_timeout=30,
+        )
     except KeyboardInterrupt:
         logger.info("Зупинено користувачем.")
     except Conflict as exc:
